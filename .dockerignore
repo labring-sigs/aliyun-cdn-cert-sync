@@ -1,0 +1,14 @@
+.git
+.github
+.codex
+.gemini
+bin
+dist
+state
+coverage.out
+cover.out
+coverage.html
+*.test
+*.cover
+*.out
+configs/config.yaml

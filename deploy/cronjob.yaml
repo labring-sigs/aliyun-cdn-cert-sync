@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cdn-cert-sync
+  labels:
+    app.kubernetes.io/name: cdn-cert-sync
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: cdn-cert-sync
+        spec:
+          serviceAccountName: cdn-cert-sync
+          restartPolicy: OnFailure
+          containers:
+            - name: cdn-cert-sync
+              image: ghcr.io/example/aliyun-cdn-cert-sync:latest
+              imagePullPolicy: IfNotPresent
+              args:
+                - --adapter-mode
+                - api
+                - --in-cluster=true
+                - --config
+                - /etc/cdn-cert-sync/config.yaml
+              env:
+                - name: CDN_CERT_SYNC_ALIYUN_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdn-cert-sync-aliyun
+                      key: accessKeyId
+                - name: CDN_CERT_SYNC_ALIYUN_ACCESS_KEY_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdn-cert-sync-aliyun
+                      key: accessKeySecret
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/cdn-cert-sync
+                  readOnly: true
+                - name: state
+                  mountPath: /var/lib/cdn-cert-sync
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                    - ALL
+          volumes:
+            - name: config
+              configMap:
+                name: cdn-cert-sync-config
+            - name: state
+              emptyDir: {}

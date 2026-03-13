@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-cert-sync-config
+  labels:
+    app.kubernetes.io/name: cdn-cert-sync
+data:
+  config.yaml: |
+    runtime:
+      adapterMode: api
+
+    kubernetes:
+      secretNamespace: cert-manager
+      secretName: site-example-tls
+
+    aliyun:
+      region: cn-hangzhou
+      credentialSource: env
+      accessKeyId: placeholder
+      accessKeySecret: placeholder
+      casEndpoint: https://cas.aliyuncs.com
+      cdnEndpoint: https://cdn.aliyuncs.com
+      cdnDomains:
+        - www.example.com
+        - static.example.com
+
+    sync:
+      maxRetries: 3
+      retryBaseMillis: 200
+      stateFile: /var/lib/cdn-cert-sync/certmap.json

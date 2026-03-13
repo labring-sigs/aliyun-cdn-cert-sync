@@ -1,0 +1,22 @@
+runtime:
+  adapterMode: memory
+
+kubernetes:
+  secretNamespace: cert-manager
+  secretName: site-example-tls
+
+aliyun:
+  region: cn-hangzhou
+  credentialSource: env
+  accessKeyId: ${ALIYUN_ACCESS_KEY_ID}
+  accessKeySecret: ${ALIYUN_ACCESS_KEY_SECRET}
+  casEndpoint: https://cas.aliyuncs.com
+  cdnEndpoint: https://cdn.aliyuncs.com
+  cdnDomains:
+    - www.example.com
+    - static.example.com
+
+sync:
+  maxRetries: 3
+  retryBaseMillis: 200
+  stateFile: ./state/certmap.json

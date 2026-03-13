@@ -1,0 +1,40 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.out
+
+# Test and coverage output
+*.test
+*.cover
+coverage.out
+cover.out
+coverage.html
+
+# Build output directories
+bin/
+dist/
+.cache/
+
+# Local runtime state
+state/
+
+# Local environment and config overrides
+.env
+.env.*
+!.env.example
+configs/config.yaml
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+
+# AI configuration files
+.codex/
+.gemini/
+.github/prompts/
+.github/skills/
