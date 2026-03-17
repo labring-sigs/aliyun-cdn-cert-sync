@@ -1,53 +1,145 @@
 package aliyun
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
 
-func TestParseCASUploadCertID(t *testing.T) {
-	cases := []struct {
-		name string
-		body string
-		want string
-	}{
-		{
-			name: "top-level cert id",
-			body: `{"CertId":"abc"}`,
-			want: "abc",
-		},
-		{
-			name: "nested certificate id",
-			body: `{"Data":{"CertificateId":"xyz"}}`,
-			want: "xyz",
-		},
-		{
-			name: "empty",
-			body: `{}`,
-			want: "",
-		},
-	}
+	casopenapi "github.com/alibabacloud-go/cas-20200407/v4/client"
+	cdnopenapi "github.com/alibabacloud-go/cdn-20180510/v8/client"
+)
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseCASUploadCertID([]byte(tc.body))
-			if err != nil {
-				t.Fatalf("parseCASUploadCertID returned error: %v", err)
-			}
-			if got != tc.want {
-				t.Fatalf("expected %q, got %q", tc.want, got)
-			}
-		})
-	}
+type stubCASClient struct {
+	listFn   func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error)
+	uploadFn func(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error)
 }
 
-func TestParseCASCertificateList(t *testing.T) {
-	body := `{"Data":{"CertificateList":[{"CertId":"id-1","Fingerprint":"fp-1"}]}}`
-	items, err := parseCASCertificateList([]byte(body))
+func (s *stubCASClient) ListUserCertificateOrder(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
+	return s.listFn(request)
+}
+
+func (s *stubCASClient) UploadUserCertificate(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error) {
+	return s.uploadFn(request)
+}
+
+type stubCDNClient struct {
+	setFn func(request *cdnopenapi.SetCdnDomainSSLCertificateRequest) (*cdnopenapi.SetCdnDomainSSLCertificateResponse, error)
+}
+
+func (s *stubCDNClient) SetCdnDomainSSLCertificate(request *cdnopenapi.SetCdnDomainSSLCertificateRequest) (*cdnopenapi.SetCdnDomainSSLCertificateResponse, error) {
+	return s.setFn(request)
+}
+
+func TestAPIClientFindCertificateByFingerprint(t *testing.T) {
+	client := &APIClient{
+		cas: &stubCASClient{
+			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
+				if request == nil || request.Keyword == nil || *request.Keyword != "fp-1" {
+					t.Fatalf("unexpected request keyword: %#v", request)
+				}
+				return &casopenapi.ListUserCertificateOrderResponse{
+					Body: &casopenapi.ListUserCertificateOrderResponseBody{
+						ShowSize: teaInt64(100),
+						CertificateOrderList: []*casopenapi.ListUserCertificateOrderResponseBodyCertificateOrderList{
+							{
+								CertificateId: teaInt64(42),
+								Fingerprint:   teaString("fp-1"),
+							},
+						},
+					},
+				}, nil
+			},
+		},
+	}
+
+	cert, err := client.FindCertificateByFingerprint(context.Background(), "fp-1")
 	if err != nil {
-		t.Fatalf("parseCASCertificateList returned error: %v", err)
+		t.Fatalf("FindCertificateByFingerprint returned error: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(items))
-	}
-	if items[0].ID != "id-1" {
-		t.Fatalf("unexpected id: %s", items[0].ID)
+	if cert.ID != "42" {
+		t.Fatalf("expected id 42, got %q", cert.ID)
 	}
 }
+
+func TestAPIClientFindCertificateByFingerprintNotFound(t *testing.T) {
+	client := &APIClient{
+		cas: &stubCASClient{
+			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
+				return &casopenapi.ListUserCertificateOrderResponse{
+					Body: &casopenapi.ListUserCertificateOrderResponseBody{
+						ShowSize:             teaInt64(100),
+						CertificateOrderList: []*casopenapi.ListUserCertificateOrderResponseBodyCertificateOrderList{},
+					},
+				}, nil
+			},
+		},
+	}
+
+	_, err := client.FindCertificateByFingerprint(context.Background(), "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestAPIClientUploadCertificate(t *testing.T) {
+	client := &APIClient{
+		cas: &stubCASClient{
+			uploadFn: func(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error) {
+				if request == nil || request.Cert == nil || request.Key == nil || request.Name == nil {
+					t.Fatalf("unexpected upload request: %#v", request)
+				}
+				return &casopenapi.UploadUserCertificateResponse{
+					Body: &casopenapi.UploadUserCertificateResponseBody{CertId: teaInt64(99)},
+				}, nil
+			},
+		},
+	}
+
+	cert, err := client.UploadCertificate(context.Background(), "cert", "key", "fp-99")
+	if err != nil {
+		t.Fatalf("UploadCertificate returned error: %v", err)
+	}
+	if cert.ID != "99" {
+		t.Fatalf("expected id 99, got %q", cert.ID)
+	}
+}
+
+func TestAPIClientUpdateDomainCertificate(t *testing.T) {
+	client := &APIClient{
+		cfg: APIClientConfig{Region: "cn-hangzhou"},
+		cdn: &stubCDNClient{
+			setFn: func(request *cdnopenapi.SetCdnDomainSSLCertificateRequest) (*cdnopenapi.SetCdnDomainSSLCertificateResponse, error) {
+				if request == nil || request.DomainName == nil || *request.DomainName != "www.example.com" {
+					t.Fatalf("unexpected request: %#v", request)
+				}
+				if request.CertId == nil || *request.CertId != 123 {
+					t.Fatalf("unexpected cert id: %#v", request.CertId)
+				}
+				if request.CertType == nil || *request.CertType != "cas" {
+					t.Fatalf("unexpected cert type: %#v", request.CertType)
+				}
+				if request.SSLProtocol == nil || *request.SSLProtocol != "on" {
+					t.Fatalf("unexpected ssl protocol: %#v", request.SSLProtocol)
+				}
+				return &cdnopenapi.SetCdnDomainSSLCertificateResponse{}, nil
+			},
+		},
+	}
+
+	if err := client.UpdateDomainCertificate(context.Background(), "www.example.com", "123"); err != nil {
+		t.Fatalf("UpdateDomainCertificate returned error: %v", err)
+	}
+}
+
+func TestClassifyError(t *testing.T) {
+	if got := ClassifyError(fmtErrorWrap(ErrRetryable)); !errors.Is(got, ErrRetryable) {
+		t.Fatalf("expected retryable, got %v", got)
+	}
+	if got := ClassifyError(errors.New("boom")); !errors.Is(got, ErrTerminal) {
+		t.Fatalf("expected terminal, got %v", got)
+	}
+}
+
+func teaInt64(v int64) *int64      { return &v }
+func teaString(v string) *string   { return &v }
+func fmtErrorWrap(err error) error { return errors.Join(err) }

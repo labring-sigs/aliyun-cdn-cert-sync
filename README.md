@@ -32,6 +32,34 @@ go mod tidy
 go build -tags clientgo ./...
 ```
 
+## Test
+
+Unit tests:
+
+```bash
+go test ./...
+```
+
+Aliyun live integration tests are opt-in and excluded from normal test runs. To use them:
+
+1. Copy `internal/aliyun/testdata/aliyun-live.env.example` to `internal/aliyun/testdata/aliyun-live.env`
+2. Fill in real Aliyun credentials, endpoints, and a known certificate fingerprint
+3. Run:
+
+```bash
+go test -tags integration ./internal/aliyun
+```
+
+Or use the Makefile shortcut:
+
+```bash
+make test-integration
+```
+
+These integration tests make real Aliyun API calls, and the CDN binding test can update the configured domain's certificate binding.
+
+The CDN live binding test only runs if `ALIYUN_LIVE_CERT_ID` and `ALIYUN_LIVE_CDN_DOMAIN` are also set.
+
 ## CI Image Build
 
 GitHub Actions builds the container image for every pull request and every push to `main` using `.github/workflows/image-build.yml`.

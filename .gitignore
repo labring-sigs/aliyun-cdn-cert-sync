@@ -28,6 +28,7 @@ state/
 .env.*
 !.env.example
 configs/config.yaml
+internal/aliyun/testdata/aliyun-live.env
 
 # Editor and OS noise
 .DS_Store

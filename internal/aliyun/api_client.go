@@ -1,22 +1,17 @@
 package aliyun
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
-	"net/url"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
+
+	casopenapi "github.com/alibabacloud-go/cas-20200407/v4/client"
+	cdnopenapi "github.com/alibabacloud-go/cdn-20180510/v8/client"
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	tea "github.com/alibabacloud-go/tea/tea"
 )
 
 type APIClientConfig struct {
@@ -28,9 +23,19 @@ type APIClientConfig struct {
 	CDNEndpoint      string
 }
 
+type casSDK interface {
+	ListUserCertificateOrder(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error)
+	UploadUserCertificate(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error)
+}
+
+type cdnSDK interface {
+	SetCdnDomainSSLCertificate(request *cdnopenapi.SetCdnDomainSSLCertificateRequest) (*cdnopenapi.SetCdnDomainSSLCertificateResponse, error)
+}
+
 type APIClient struct {
-	cfg  APIClientConfig
-	http *http.Client
+	cfg APIClientConfig
+	cas casSDK
+	cdn cdnSDK
 }
 
 func NewAPIClient(cfg APIClientConfig) (*APIClient, error) {
@@ -46,13 +51,35 @@ func NewAPIClient(cfg APIClientConfig) (*APIClient, error) {
 	if strings.TrimSpace(cfg.CDNEndpoint) == "" {
 		return nil, fmt.Errorf("%w: cdn endpoint is required", ErrTerminal)
 	}
+	if strings.TrimSpace(cfg.AccessKeyID) == "" || strings.TrimSpace(cfg.AccessKeySecret) == "" {
+		return nil, fmt.Errorf("%w: access key credentials are required", ErrTerminal)
+	}
 
-	return &APIClient{
-		cfg: cfg,
-		http: &http.Client{
-			Timeout: 15 * time.Second,
-		},
-	}, nil
+	casConfig := &openapi.Config{}
+	casConfig.SetAccessKeyId(cfg.AccessKeyID)
+	casConfig.SetAccessKeySecret(cfg.AccessKeySecret)
+	casConfig.SetRegionId(cfg.Region)
+	casConfig.SetEndpoint(cfg.CASEndpoint)
+	casConfig.SetProtocol("HTTPS")
+
+	casClient, err := casopenapi.NewClient(casConfig)
+	if err != nil {
+		return nil, wrapSDKError("init cas client", err)
+	}
+
+	cdnConfig := &openapi.Config{}
+	cdnConfig.SetAccessKeyId(cfg.AccessKeyID)
+	cdnConfig.SetAccessKeySecret(cfg.AccessKeySecret)
+	cdnConfig.SetRegionId(cfg.Region)
+	cdnConfig.SetEndpoint(cfg.CDNEndpoint)
+	cdnConfig.SetProtocol("HTTPS")
+
+	cdnClient, err := cdnopenapi.NewClient(cdnConfig)
+	if err != nil {
+		return nil, wrapSDKError("init cdn client", err)
+	}
+
+	return &APIClient{cfg: cfg, cas: casClient, cdn: cdnClient}, nil
 }
 
 func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprint string) (Certificate, error) {
@@ -63,24 +90,40 @@ func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprin
 		return Certificate{}, fmt.Errorf("%w: context done", ErrRetryable)
 	}
 
-	resp, err := c.callCAS(ctx, map[string]string{
-		"Action": "DescribeUserCertificateList",
-	})
-	if err != nil {
-		return Certificate{}, err
-	}
+	page := int64(1)
+	for {
+		request := &casopenapi.ListUserCertificateOrderRequest{}
+		request.SetCurrentPage(page)
+		request.SetShowSize(100)
+		request.SetOrderType("UPLOAD")
+		request.SetKeyword(fingerprint)
 
-	certs, parseErr := parseCASCertificateList(resp)
-	if parseErr != nil {
-		return Certificate{}, fmt.Errorf("%w: decode cas list response: %v", ErrRetryable, parseErr)
-	}
-	for _, item := range certs {
-		if item.Fingerprint == fingerprint && item.ID != "" {
-			return Certificate{
-				ID:          item.ID,
-				Fingerprint: item.Fingerprint,
-			}, nil
+		response, err := c.cas.ListUserCertificateOrder(request)
+		if err != nil {
+			return Certificate{}, wrapSDKError("list certificates", err)
 		}
+		if response == nil || response.Body == nil {
+			return Certificate{}, fmt.Errorf("%w: empty cas certificate list response", ErrRetryable)
+		}
+
+		items := response.Body.CertificateOrderList
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			if tea.StringValue(item.Fingerprint) == fingerprint && item.CertificateId != nil {
+				return Certificate{
+					ID:          strconv.FormatInt(tea.Int64Value(item.CertificateId), 10),
+					Fingerprint: fingerprint,
+				}, nil
+			}
+		}
+
+		showSize := tea.Int64Value(response.Body.ShowSize)
+		if showSize <= 0 || int64(len(items)) < showSize {
+			break
+		}
+		page++
 	}
 
 	return Certificate{}, ErrNotFound
@@ -94,27 +137,21 @@ func (c *APIClient) UploadCertificate(ctx context.Context, certPEM, keyPEM, fing
 		return Certificate{}, fmt.Errorf("%w: context done", ErrRetryable)
 	}
 
-	resp, err := c.callCAS(ctx, map[string]string{
-		"Action":      "UploadUserCertificate",
-		"Cert":        certPEM,
-		"Key":         keyPEM,
-		"Name":        "cdn-cert-sync",
-		"Fingerprint": fingerprint,
-	})
-	if err != nil {
-		return Certificate{}, err
-	}
+	request := &casopenapi.UploadUserCertificateRequest{}
+	request.SetName(certificateName(fingerprint))
+	request.SetCert(certPEM)
+	request.SetKey(keyPEM)
 
-	certID, parseErr := parseCASUploadCertID(resp)
-	if parseErr != nil {
-		return Certificate{}, fmt.Errorf("%w: decode cas upload response: %v", ErrRetryable, parseErr)
+	response, err := c.cas.UploadUserCertificate(request)
+	if err != nil {
+		return Certificate{}, wrapSDKError("upload certificate", err)
 	}
-	if certID == "" {
+	if response == nil || response.Body == nil || response.Body.CertId == nil {
 		return Certificate{}, fmt.Errorf("%w: missing cert id in cas response", ErrRetryable)
 	}
 
 	return Certificate{
-		ID:          certID,
+		ID:          strconv.FormatInt(tea.Int64Value(response.Body.CertId), 10),
 		Fingerprint: fingerprint,
 		CertPEM:     certPEM,
 		KeyPEM:      keyPEM,
@@ -129,12 +166,24 @@ func (c *APIClient) UpdateDomainCertificate(ctx context.Context, domain, certifi
 		return fmt.Errorf("%w: context done", ErrRetryable)
 	}
 
-	_, err := c.callCDN(ctx, map[string]string{
-		"Action":              "SetDomainServerCertificate",
-		"DomainName":          domain,
-		"ServerCertificateId": certificateID,
-	})
-	return err
+	certID, err := strconv.ParseInt(certificateID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("%w: invalid certificate id %q", ErrTerminal, certificateID)
+	}
+
+	request := &cdnopenapi.SetCdnDomainSSLCertificateRequest{}
+	request.SetDomainName(domain)
+	request.SetSSLProtocol("on")
+	request.SetCertType("cas")
+	request.SetCertId(certID)
+	request.SetCertName(certificateName(certificateID))
+	request.SetCertRegion(c.cfg.Region)
+
+	_, err = c.cdn.SetCdnDomainSSLCertificate(request)
+	if err != nil {
+		return wrapSDKError("update domain certificate", err)
+	}
+	return nil
 }
 
 func ClassifyError(err error) error {
@@ -147,189 +196,45 @@ func ClassifyError(err error) error {
 	return ErrTerminal
 }
 
-func (c *APIClient) callCAS(ctx context.Context, params map[string]string) ([]byte, error) {
-	return c.callRPC(ctx, c.cfg.CASEndpoint, params)
+func certificateName(suffix string) string {
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return "cdn-cert-sync"
+	}
+	if len(suffix) > 32 {
+		suffix = suffix[:32]
+	}
+	return "cdn-cert-sync-" + suffix
 }
 
-func (c *APIClient) callCDN(ctx context.Context, params map[string]string) ([]byte, error) {
-	return c.callRPC(ctx, c.cfg.CDNEndpoint, params)
+func wrapSDKError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if isSDKRetryable(err) {
+		return fmt.Errorf("%w: %s: %v", ErrRetryable, action, err)
+	}
+	return fmt.Errorf("%w: %s: %v", ErrTerminal, action, err)
 }
 
-func (c *APIClient) callRPC(ctx context.Context, endpoint string, params map[string]string) ([]byte, error) {
-	if strings.TrimSpace(c.cfg.AccessKeyID) == "" || strings.TrimSpace(c.cfg.AccessKeySecret) == "" {
-		return nil, fmt.Errorf("%w: access key credentials are required", ErrTerminal)
+func isSDKRetryable(err error) bool {
+	if err == nil {
+		return false
 	}
-
-	version := "2018-01-29"
-	if action := params["Action"]; action == "SetDomainServerCertificate" {
-		version = "2018-05-10"
-	}
-
-	requestParams := map[string]string{
-		"AccessKeyId":      c.cfg.AccessKeyID,
-		"Format":           "JSON",
-		"SignatureMethod":  "HMAC-SHA1",
-		"SignatureNonce":   strconv.FormatInt(time.Now().UnixNano(), 10),
-		"SignatureVersion": "1.0",
-		"Timestamp":        time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		"Version":          version,
-	}
-	for k, v := range params {
-		requestParams[k] = v
-	}
-
-	signature := signRPC(requestParams, c.cfg.AccessKeySecret)
-	requestParams["Signature"] = signature
-
-	form := url.Values{}
-	for k, v := range requestParams {
-		form.Set(k, v)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBufferString(form.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("%w: build request: %v", ErrRetryable, err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		if isNetworkRetryable(err) {
-			return nil, fmt.Errorf("%w: network error: %v", ErrRetryable, err)
-		}
-		return nil, fmt.Errorf("%w: request failed: %v", ErrTerminal, err)
-	}
-	defer resp.Body.Close()
-
-	body, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return nil, fmt.Errorf("%w: read response: %v", ErrRetryable, readErr)
-	}
-
-	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("%w: service status=%d", ErrRetryable, resp.StatusCode)
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("%w: request status=%d body=%s", ErrTerminal, resp.StatusCode, string(body))
-	}
-
-	if apiErr := parseRPCError(body); apiErr != nil {
-		if isRPCRetryableCode(apiErr.Code) {
-			return nil, fmt.Errorf("%w: code=%s message=%s request_id=%s", ErrRetryable, apiErr.Code, apiErr.Message, apiErr.RequestID)
-		}
-		return nil, fmt.Errorf("%w: code=%s message=%s request_id=%s", ErrTerminal, apiErr.Code, apiErr.Message, apiErr.RequestID)
-	}
-	return body, nil
-}
-
-func signRPC(params map[string]string, accessKeySecret string) string {
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	query := make(url.Values)
-	for _, k := range keys {
-		query.Set(k, params[k])
-	}
-	stringToSign := "POST&%2F&" + url.QueryEscape(query.Encode())
-
-	mac := hmac.New(sha1.New, []byte(accessKeySecret+"&"))
-	_, _ = mac.Write([]byte(stringToSign))
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func isNetworkRetryable(err error) bool {
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
 	}
-	return errors.Is(err, context.DeadlineExceeded)
-}
-
-type rpcErrorEnvelope struct {
-	Code      string `json:"Code"`
-	Message   string `json:"Message"`
-	RequestID string `json:"RequestId"`
-}
-
-type casCertificate struct {
-	ID          string `json:"CertId"`
-	Fingerprint string `json:"Fingerprint"`
-}
-
-func parseRPCError(body []byte) *rpcErrorEnvelope {
-	var payload rpcErrorEnvelope
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil
-	}
-	if payload.Code == "" && payload.Message == "" {
-		return nil
-	}
-	return &payload
-}
-
-func isRPCRetryableCode(code string) bool {
-	c := strings.ToLower(strings.TrimSpace(code))
-	return strings.Contains(c, "throttl") ||
-		strings.Contains(c, "timeout") ||
-		strings.Contains(c, "unavailable") ||
-		strings.Contains(c, "internalerror") ||
-		strings.Contains(c, "servicebusy")
-}
-
-func parseCASCertificateList(body []byte) ([]casCertificate, error) {
-	var payload struct {
-		CertificateList []casCertificate `json:"CertificateList"`
-		Certificates    []casCertificate `json:"Certificates"`
-		Data            struct {
-			CertificateList []casCertificate `json:"CertificateList"`
-			Certificates    []casCertificate `json:"Certificates"`
-		} `json:"Data"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-
-	if len(payload.CertificateList) > 0 {
-		return payload.CertificateList, nil
-	}
-	if len(payload.Certificates) > 0 {
-		return payload.Certificates, nil
-	}
-	if len(payload.Data.CertificateList) > 0 {
-		return payload.Data.CertificateList, nil
-	}
-	if len(payload.Data.Certificates) > 0 {
-		return payload.Data.Certificates, nil
-	}
-	return nil, nil
-}
-
-func parseCASUploadCertID(body []byte) (string, error) {
-	var payload struct {
-		CertID        string `json:"CertId"`
-		CertificateID string `json:"CertificateId"`
-		Data          struct {
-			CertID        string `json:"CertId"`
-			CertificateID string `json:"CertificateId"`
-		} `json:"Data"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return "", err
-	}
-
-	switch {
-	case payload.CertID != "":
-		return payload.CertID, nil
-	case payload.CertificateID != "":
-		return payload.CertificateID, nil
-	case payload.Data.CertID != "":
-		return payload.Data.CertID, nil
-	case payload.Data.CertificateID != "":
-		return payload.Data.CertificateID, nil
-	default:
-		return "", nil
-	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "throttl") ||
+		strings.Contains(message, "timeout") ||
+		strings.Contains(message, "timed out") ||
+		strings.Contains(message, "temporary") ||
+		strings.Contains(message, "unavailable") ||
+		strings.Contains(message, "internalerror") ||
+		strings.Contains(message, "servicebusy") ||
+		strings.Contains(message, "too many requests") ||
+		strings.Contains(message, "connection reset") ||
+		strings.Contains(message, "connection refused") ||
+		strings.Contains(message, "eof")
 }
