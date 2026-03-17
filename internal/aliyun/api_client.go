@@ -26,6 +26,7 @@ type APIClientConfig struct {
 type casSDK interface {
 	ListUserCertificateOrder(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error)
 	UploadUserCertificate(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error)
+	DeleteUserCertificate(request *casopenapi.DeleteUserCertificateRequest) (*casopenapi.DeleteUserCertificateResponse, error)
 }
 
 type cdnSDK interface {
@@ -156,6 +157,29 @@ func (c *APIClient) UploadCertificate(ctx context.Context, certPEM, keyPEM, fing
 		CertPEM:     certPEM,
 		KeyPEM:      keyPEM,
 	}, nil
+}
+
+func (c *APIClient) DeleteCertificate(ctx context.Context, certificateID string) error {
+	if strings.TrimSpace(certificateID) == "" {
+		return fmt.Errorf("%w: certificate id is empty", ErrTerminal)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: context done", ErrRetryable)
+	}
+
+	certID, err := strconv.ParseInt(certificateID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("%w: invalid certificate id %q", ErrTerminal, certificateID)
+	}
+
+	request := &casopenapi.DeleteUserCertificateRequest{}
+	request.SetCertId(certID)
+
+	_, err = c.cas.DeleteUserCertificate(request)
+	if err != nil {
+		return wrapSDKError("delete certificate", err)
+	}
+	return nil
 }
 
 func (c *APIClient) UpdateDomainCertificate(ctx context.Context, domain, certificateID string) error {

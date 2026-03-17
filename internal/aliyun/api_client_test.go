@@ -12,6 +12,7 @@ import (
 type stubCASClient struct {
 	listFn   func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error)
 	uploadFn func(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error)
+	deleteFn func(request *casopenapi.DeleteUserCertificateRequest) (*casopenapi.DeleteUserCertificateResponse, error)
 }
 
 func (s *stubCASClient) ListUserCertificateOrder(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
@@ -20,6 +21,10 @@ func (s *stubCASClient) ListUserCertificateOrder(request *casopenapi.ListUserCer
 
 func (s *stubCASClient) UploadUserCertificate(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error) {
 	return s.uploadFn(request)
+}
+
+func (s *stubCASClient) DeleteUserCertificate(request *casopenapi.DeleteUserCertificateRequest) (*casopenapi.DeleteUserCertificateResponse, error) {
+	return s.deleteFn(request)
 }
 
 type stubCDNClient struct {
@@ -92,6 +97,9 @@ func TestAPIClientUploadCertificate(t *testing.T) {
 					Body: &casopenapi.UploadUserCertificateResponseBody{CertId: teaInt64(99)},
 				}, nil
 			},
+			deleteFn: func(request *casopenapi.DeleteUserCertificateRequest) (*casopenapi.DeleteUserCertificateResponse, error) {
+				return &casopenapi.DeleteUserCertificateResponse{}, nil
+			},
 		},
 	}
 
@@ -101,6 +109,29 @@ func TestAPIClientUploadCertificate(t *testing.T) {
 	}
 	if cert.ID != "99" {
 		t.Fatalf("expected id 99, got %q", cert.ID)
+	}
+}
+
+func TestAPIClientDeleteCertificate(t *testing.T) {
+	client := &APIClient{
+		cas: &stubCASClient{
+			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
+				return &casopenapi.ListUserCertificateOrderResponse{}, nil
+			},
+			uploadFn: func(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error) {
+				return &casopenapi.UploadUserCertificateResponse{}, nil
+			},
+			deleteFn: func(request *casopenapi.DeleteUserCertificateRequest) (*casopenapi.DeleteUserCertificateResponse, error) {
+				if request == nil || request.CertId == nil || *request.CertId != 123 {
+					t.Fatalf("unexpected delete request: %#v", request)
+				}
+				return &casopenapi.DeleteUserCertificateResponse{}, nil
+			},
+		},
+	}
+
+	if err := client.DeleteCertificate(context.Background(), "123"); err != nil {
+		t.Fatalf("DeleteCertificate returned error: %v", err)
 	}
 }
 

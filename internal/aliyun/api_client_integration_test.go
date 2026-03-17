@@ -4,6 +4,8 @@ package aliyun
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -57,11 +59,65 @@ func TestAPIClientLiveCDNBinding(t *testing.T) {
 	}
 }
 
+func TestAPIClientLiveUploadCertificate(t *testing.T) {
+	cfg := loadLiveAPIClientConfig(t)
+	if cfg == nil {
+		t.Skip("live Aliyun CAS test config not found")
+	}
+	if cfg.LiveUploadCertPath == "" || cfg.LiveUploadKeyPath == "" {
+		t.Skip("live upload test requires ALIYUN_LIVE_UPLOAD_CERT_PATH and ALIYUN_LIVE_UPLOAD_KEY_PATH")
+	}
+
+	certPEM, err := os.ReadFile(cfg.LiveUploadCertPath)
+	if err != nil {
+		t.Fatalf("read upload cert: %v", err)
+	}
+	keyPEM, err := os.ReadFile(cfg.LiveUploadKeyPath)
+	if err != nil {
+		t.Fatalf("read upload key: %v", err)
+	}
+
+	client, err := NewAPIClient(cfg.APIClientConfig)
+	if err != nil {
+		t.Fatalf("NewAPIClient returned error: %v", err)
+	}
+
+	fingerprint := liveCertificateFingerprint(string(certPEM))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	uploaded, err := client.UploadCertificate(ctx, string(certPEM), string(keyPEM), fingerprint)
+	if err != nil {
+		t.Fatalf("UploadCertificate returned error: %v", err)
+	}
+	if uploaded.ID == "" {
+		t.Fatal("expected uploaded certificate id")
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if cleanupErr := client.DeleteCertificate(cleanupCtx, uploaded.ID); cleanupErr != nil {
+			t.Fatalf("DeleteCertificate cleanup failed: %v", cleanupErr)
+		}
+	})
+
+	found, err := client.FindCertificateByFingerprint(ctx, fingerprint)
+	if err != nil {
+		t.Fatalf("FindCertificateByFingerprint after upload returned error: %v", err)
+	}
+	if found.ID != uploaded.ID {
+		t.Fatalf("expected uploaded cert id %q, got %q", uploaded.ID, found.ID)
+	}
+}
+
 type liveAPIClientConfig struct {
 	APIClientConfig
 	LiveCertificateFingerprint string
 	LiveCertificateID          string
 	LiveCDNDomain              string
+	LiveUploadCertPath         string
+	LiveUploadKeyPath          string
 }
 
 func loadLiveAPIClientConfig(t *testing.T) *liveAPIClientConfig {
@@ -101,6 +157,8 @@ func loadLiveAPIClientConfig(t *testing.T) *liveAPIClientConfig {
 		LiveCertificateFingerprint: values["ALIYUN_LIVE_CERT_FINGERPRINT"],
 		LiveCertificateID:          values["ALIYUN_LIVE_CERT_ID"],
 		LiveCDNDomain:              values["ALIYUN_LIVE_CDN_DOMAIN"],
+		LiveUploadCertPath:         values["ALIYUN_LIVE_UPLOAD_CERT_PATH"],
+		LiveUploadKeyPath:          values["ALIYUN_LIVE_UPLOAD_KEY_PATH"],
 	}
 
 	required := map[string]string{
@@ -118,4 +176,9 @@ func loadLiveAPIClientConfig(t *testing.T) *liveAPIClientConfig {
 	}
 
 	return cfg
+}
+
+func liveCertificateFingerprint(certPEM string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(certPEM)))
+	return hex.EncodeToString(sum[:])
 }

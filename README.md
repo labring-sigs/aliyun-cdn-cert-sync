@@ -44,6 +44,9 @@ Aliyun live integration tests are opt-in and excluded from normal test runs. To 
 
 1. Copy `internal/aliyun/testdata/aliyun-live.env.example` to `internal/aliyun/testdata/aliyun-live.env`
 2. Fill in real Aliyun credentials, endpoints, and a known certificate fingerprint
+3. Optionally set:
+   - `ALIYUN_LIVE_CERT_ID` and `ALIYUN_LIVE_CDN_DOMAIN` for the live CDN binding test
+   - `ALIYUN_LIVE_UPLOAD_CERT_PATH` and `ALIYUN_LIVE_UPLOAD_KEY_PATH` for the live CAS upload+cleanup test
 3. Run:
 
 ```bash
@@ -56,9 +59,9 @@ Or use the Makefile shortcut:
 make test-integration
 ```
 
-These integration tests make real Aliyun API calls, and the CDN binding test can update the configured domain's certificate binding.
+These integration tests make real Aliyun API calls. The CDN binding test can update the configured domain's certificate binding, and the upload test creates a real CAS certificate before deleting it during cleanup.
 
-The CDN live binding test only runs if `ALIYUN_LIVE_CERT_ID` and `ALIYUN_LIVE_CDN_DOMAIN` are also set.
+The CDN live binding test only runs if `ALIYUN_LIVE_CERT_ID` and `ALIYUN_LIVE_CDN_DOMAIN` are set. The upload+cleanup CAS test only runs if `ALIYUN_LIVE_UPLOAD_CERT_PATH` and `ALIYUN_LIVE_UPLOAD_KEY_PATH` are set.
 
 ## CI Image Build
 
