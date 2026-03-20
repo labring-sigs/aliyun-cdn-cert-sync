@@ -39,7 +39,7 @@ func TestAPIClientFindCertificateByFingerprint(t *testing.T) {
 	client := &APIClient{
 		cas: &stubCASClient{
 			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
-				if request == nil || request.Keyword == nil || *request.Keyword != "fp-1" {
+				if request == nil || request.Keyword == nil || *request.Keyword != "FP-1" {
 					t.Fatalf("unexpected request keyword: %#v", request)
 				}
 				return &casopenapi.ListUserCertificateOrderResponse{
@@ -57,7 +57,38 @@ func TestAPIClientFindCertificateByFingerprint(t *testing.T) {
 		},
 	}
 
-	cert, err := client.FindCertificateByFingerprint(context.Background(), "fp-1")
+	cert, err := client.FindCertificateByFingerprint(context.Background(), "fp-1", "rg-1")
+	if err != nil {
+		t.Fatalf("FindCertificateByFingerprint returned error: %v", err)
+	}
+	if cert.ID != "42" {
+		t.Fatalf("expected id 42, got %q", cert.ID)
+	}
+}
+
+func TestAPIClientFindCertificateByFingerprintNormalizesDelimiters(t *testing.T) {
+	client := &APIClient{
+		cas: &stubCASClient{
+			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
+				if request == nil || request.Keyword == nil || *request.Keyword != "AABBCC" {
+					t.Fatalf("unexpected request keyword: %#v", request)
+				}
+				return &casopenapi.ListUserCertificateOrderResponse{
+					Body: &casopenapi.ListUserCertificateOrderResponseBody{
+						ShowSize: teaInt64(100),
+						CertificateOrderList: []*casopenapi.ListUserCertificateOrderResponseBodyCertificateOrderList{
+							{
+								CertificateId: teaInt64(42),
+								Fingerprint:   teaString("aa:bb:cc"),
+							},
+						},
+					},
+				}, nil
+			},
+		},
+	}
+
+	cert, err := client.FindCertificateByFingerprint(context.Background(), "AA:BB:CC", "rg-1")
 	if err != nil {
 		t.Fatalf("FindCertificateByFingerprint returned error: %v", err)
 	}
@@ -80,7 +111,7 @@ func TestAPIClientFindCertificateByFingerprintNotFound(t *testing.T) {
 		},
 	}
 
-	_, err := client.FindCertificateByFingerprint(context.Background(), "missing")
+	_, err := client.FindCertificateByFingerprint(context.Background(), "missing", "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}

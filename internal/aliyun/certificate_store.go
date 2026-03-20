@@ -17,12 +17,12 @@ type Certificate struct {
 }
 
 type CertificateStore interface {
-	FindByFingerprint(ctx context.Context, fingerprint string) (Certificate, error)
+	FindByFingerprint(ctx context.Context, fingerprint, resourceGroupID string) (Certificate, error)
 	Create(ctx context.Context, certPEM, keyPEM, fingerprint string) (Certificate, error)
 }
 
 type CASAPI interface {
-	FindCertificateByFingerprint(ctx context.Context, fingerprint string) (Certificate, error)
+	FindCertificateByFingerprint(ctx context.Context, fingerprint, resourceGroupID string) (Certificate, error)
 	UploadCertificate(ctx context.Context, certPEM, keyPEM, fingerprint string) (Certificate, error)
 }
 
@@ -34,8 +34,8 @@ func NewCASCertificateStore(api CASAPI) *CASCertificateStore {
 	return &CASCertificateStore{api: api}
 }
 
-func (s *CASCertificateStore) FindByFingerprint(ctx context.Context, fingerprint string) (Certificate, error) {
-	return s.api.FindCertificateByFingerprint(ctx, fingerprint)
+func (s *CASCertificateStore) FindByFingerprint(ctx context.Context, fingerprint, resourceGroupID string) (Certificate, error) {
+	return s.api.FindCertificateByFingerprint(ctx, fingerprint, resourceGroupID)
 }
 
 func (s *CASCertificateStore) Create(ctx context.Context, certPEM, keyPEM, fingerprint string) (Certificate, error) {
@@ -55,7 +55,7 @@ func NewMemoryCertificateStore() *MemoryCertificateStore {
 	}
 }
 
-func (s *MemoryCertificateStore) FindByFingerprint(_ context.Context, fingerprint string) (Certificate, error) {
+func (s *MemoryCertificateStore) FindByFingerprint(_ context.Context, fingerprint, resourceGroupID string) (Certificate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

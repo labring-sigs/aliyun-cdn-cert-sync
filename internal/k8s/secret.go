@@ -2,10 +2,13 @@ package k8s
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/sha1"
+	"crypto/x509"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 type TLSSecret struct {
@@ -16,11 +19,33 @@ type TLSSecret struct {
 }
 
 func (s TLSSecret) Fingerprint() (string, error) {
-	if s.CertPEM == "" {
+	if strings.TrimSpace(s.CertPEM) == "" {
 		return "", errors.New("empty cert pem")
 	}
-	sum := sha256.Sum256([]byte(s.CertPEM))
-	return hex.EncodeToString(sum[:]), nil
+
+	block, _ := pem.Decode([]byte(s.CertPEM))
+	if block == nil || block.Type != "CERTIFICATE" {
+		return "", errors.New("invalid cert pem")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("parse cert pem: %w", err)
+	}
+
+	sum := sha1.Sum(cert.Raw)
+	hexDigest := strings.ToUpper(hex.EncodeToString(sum[:]))
+
+	var builder strings.Builder
+	builder.Grow(len(hexDigest) + (len(sum) - 1))
+	for i := 0; i < len(hexDigest); i += 2 {
+		if i > 0 {
+			builder.WriteByte(':')
+		}
+		builder.WriteString(hexDigest[i : i+2])
+	}
+
+	return builder.String(), nil
 }
 
 type SecretSource interface {

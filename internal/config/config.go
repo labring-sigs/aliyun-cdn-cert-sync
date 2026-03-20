@@ -32,6 +32,7 @@ type AliyunConfig struct {
 	CASEndpoint      string
 	CDNEndpoint      string
 	CDNDomains       []string
+	ResourceGroupID  string
 }
 
 type SyncConfig struct {

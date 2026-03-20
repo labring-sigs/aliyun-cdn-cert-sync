@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type APIClientConfig struct {
 	AccessKeySecret  string
 	CASEndpoint      string
 	CDNEndpoint      string
+	ResourceGroupID  string
 }
 
 type casSDK interface {
@@ -83,7 +85,7 @@ func NewAPIClient(cfg APIClientConfig) (*APIClient, error) {
 	return &APIClient{cfg: cfg, cas: casClient, cdn: cdnClient}, nil
 }
 
-func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprint string) (Certificate, error) {
+func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprint string, resourceGroupID string) (Certificate, error) {
 	if strings.TrimSpace(fingerprint) == "" {
 		return Certificate{}, fmt.Errorf("%w: fingerprint is empty", ErrTerminal)
 	}
@@ -91,13 +93,15 @@ func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprin
 		return Certificate{}, fmt.Errorf("%w: context done", ErrRetryable)
 	}
 
+	normalizedFingerprint := normalizeFingerprint(fingerprint)
+	log.Printf("normalized fingerprint is %v", normalizedFingerprint)
 	page := int64(1)
 	for {
 		request := &casopenapi.ListUserCertificateOrderRequest{}
+		request.SetResourceGroupId(resourceGroupID)
 		request.SetCurrentPage(page)
 		request.SetShowSize(100)
 		request.SetOrderType("UPLOAD")
-		request.SetKeyword(fingerprint)
 
 		response, err := c.cas.ListUserCertificateOrder(request)
 		if err != nil {
@@ -112,7 +116,8 @@ func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprin
 			if item == nil {
 				continue
 			}
-			if tea.StringValue(item.Fingerprint) == fingerprint && item.CertificateId != nil {
+			log.Printf("fingerprint %v found", tea.StringValue(item.Fingerprint))
+			if normalizeFingerprint(tea.StringValue(item.Fingerprint)) == normalizedFingerprint && item.CertificateId != nil {
 				return Certificate{
 					ID:          strconv.FormatInt(tea.Int64Value(item.CertificateId), 10),
 					Fingerprint: fingerprint,
@@ -128,6 +133,10 @@ func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprin
 	}
 
 	return Certificate{}, ErrNotFound
+}
+
+func normalizeFingerprint(fingerprint string) string {
+	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(fingerprint), ":", ""))
 }
 
 func (c *APIClient) UploadCertificate(ctx context.Context, certPEM, keyPEM, fingerprint string) (Certificate, error) {

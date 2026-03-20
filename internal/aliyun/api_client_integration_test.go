@@ -4,14 +4,14 @@ package aliyun
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/k8s"
 )
 
 func TestAPIClientLiveCASOperations(t *testing.T) {
@@ -28,7 +28,7 @@ func TestAPIClientLiveCASOperations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cert, err := client.FindCertificateByFingerprint(ctx, cfg.LiveCertificateFingerprint)
+	cert, err := client.FindCertificateByFingerprint(ctx, cfg.LiveCertificateFingerprint, cfg.ResourceGroupID)
 	if err != nil {
 		t.Fatalf("FindCertificateByFingerprint returned error: %v", err)
 	}
@@ -83,6 +83,7 @@ func TestAPIClientLiveUploadCertificate(t *testing.T) {
 	}
 
 	fingerprint := liveCertificateFingerprint(string(certPEM))
+	t.Logf("The fingerprint is: %v", fingerprint)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -102,7 +103,7 @@ func TestAPIClientLiveUploadCertificate(t *testing.T) {
 		}
 	})
 
-	found, err := client.FindCertificateByFingerprint(ctx, fingerprint)
+	found, err := client.FindCertificateByFingerprint(ctx, fingerprint, cfg.ResourceGroupID)
 	if err != nil {
 		t.Fatalf("FindCertificateByFingerprint after upload returned error: %v", err)
 	}
@@ -153,6 +154,7 @@ func loadLiveAPIClientConfig(t *testing.T) *liveAPIClientConfig {
 			AccessKeySecret:  values["ALIYUN_ACCESS_KEY_SECRET"],
 			CASEndpoint:      values["ALIYUN_CAS_ENDPOINT"],
 			CDNEndpoint:      values["ALIYUN_CDN_ENDPOINT"],
+			ResourceGroupID:  values["ALIYUN_RESOURCE_GROUP_ID"],
 		},
 		LiveCertificateFingerprint: values["ALIYUN_LIVE_CERT_FINGERPRINT"],
 		LiveCertificateID:          values["ALIYUN_LIVE_CERT_ID"],
@@ -168,6 +170,7 @@ func loadLiveAPIClientConfig(t *testing.T) *liveAPIClientConfig {
 		"ALIYUN_CAS_ENDPOINT":          cfg.CASEndpoint,
 		"ALIYUN_CDN_ENDPOINT":          cfg.CDNEndpoint,
 		"ALIYUN_LIVE_CERT_FINGERPRINT": cfg.LiveCertificateFingerprint,
+		"ALIYUN_RESOURCE_GROUP_ID":     cfg.ResourceGroupID,
 	}
 	for key, value := range required {
 		if strings.TrimSpace(value) == "" {
@@ -179,6 +182,9 @@ func loadLiveAPIClientConfig(t *testing.T) *liveAPIClientConfig {
 }
 
 func liveCertificateFingerprint(certPEM string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(certPEM)))
-	return hex.EncodeToString(sum[:])
+	fingerprint, err := (k8s.TLSSecret{CertPEM: certPEM}).Fingerprint()
+	if err != nil {
+		panic(err)
+	}
+	return fingerprint
 }

@@ -63,7 +63,7 @@ func (r *Reconciler) RunOnce(ctx context.Context) (Report, error) {
 		return report, fmt.Errorf("build cert fingerprint: %w", err)
 	}
 
-	certificate, uploaded, retries, err := r.ensureCertificate(ctx, secret, fingerprint, baseDelay)
+	certificate, uploaded, retries, err := r.ensureCertificate(ctx, secret, fingerprint, r.cfg.Aliyun.ResourceGroupID, baseDelay)
 	report.Uploaded = uploaded
 	report.Retries += retries
 	if err != nil {
@@ -90,6 +90,7 @@ func (r *Reconciler) ensureCertificate(
 	ctx context.Context,
 	secret k8s.TLSSecret,
 	fingerprint string,
+	resourceGroupID string,
 	baseDelay time.Duration,
 ) (aliyun.Certificate, bool, int, error) {
 	var (
@@ -98,7 +99,7 @@ func (r *Reconciler) ensureCertificate(
 	)
 	retries, err := withRetry(ctx, r.cfg.Sync.MaxRetries, baseDelay, func() error {
 		var runErr error
-		certificate, uploaded, runErr = r.ensureCertificateOnce(ctx, secret, fingerprint)
+		certificate, uploaded, runErr = r.ensureCertificateOnce(ctx, secret, fingerprint, resourceGroupID)
 		return runErr
 	})
 	if err != nil {
@@ -110,7 +111,7 @@ func (r *Reconciler) ensureCertificate(
 func (r *Reconciler) ensureCertificateOnce(
 	ctx context.Context,
 	secret k8s.TLSSecret,
-	fingerprint string,
+	fingerprint, resourceGroupID string,
 ) (aliyun.Certificate, bool, error) {
 	if r.stateStore != nil {
 		if certID, ok, err := r.stateStore.GetCertIDByFingerprint(fingerprint); err == nil && ok && certID != "" {
@@ -121,7 +122,7 @@ func (r *Reconciler) ensureCertificateOnce(
 		}
 	}
 
-	existing, err := r.certs.FindByFingerprint(ctx, fingerprint)
+	existing, err := r.certs.FindByFingerprint(ctx, fingerprint, resourceGroupID)
 	if err == nil {
 		if r.stateStore != nil {
 			_ = r.stateStore.SetCertIDByFingerprint(fingerprint, existing.ID)
