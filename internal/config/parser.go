@@ -86,6 +86,8 @@ func parseSimpleYAML(content string) (Config, error) {
 				cfg.Aliyun.CASEndpoint = value
 			case "cdnEndpoint":
 				cfg.Aliyun.CDNEndpoint = value
+			case "resourceGroupId":
+				cfg.Aliyun.ResourceGroupID = value
 			default:
 				return Config{}, fmt.Errorf("unknown aliyun key: %s", key)
 			}

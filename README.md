@@ -88,6 +88,7 @@ Required in `api` mode:
 - `aliyun.credentialSource` (`env` supported)
 - `aliyun.casEndpoint`
 - `aliyun.cdnEndpoint`
+- `aliyun.resourceGroupId` (optional, but recommended when CAS certificates are scoped to a resource group)
 - `aliyun.cdnDomains` (non-empty)
 - `sync.stateFile`
 
@@ -95,6 +96,7 @@ When `aliyun.credentialSource=env`, set:
 
 - `CDN_CERT_SYNC_ALIYUN_ACCESS_KEY_ID`
 - `CDN_CERT_SYNC_ALIYUN_ACCESS_KEY_SECRET`
+- `CDN_CERT_SYNC_ALIYUN_RESOURCE_GROUP_ID`
 
 Other supported overrides:
 

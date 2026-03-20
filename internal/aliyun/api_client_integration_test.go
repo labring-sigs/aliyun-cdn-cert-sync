@@ -83,7 +83,6 @@ func TestAPIClientLiveUploadCertificate(t *testing.T) {
 	}
 
 	fingerprint := liveCertificateFingerprint(string(certPEM))
-	t.Logf("The fingerprint is: %v", fingerprint)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -94,7 +93,6 @@ func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprin
 	}
 
 	normalizedFingerprint := normalizeFingerprint(fingerprint)
-	log.Printf("normalized fingerprint is %v", normalizedFingerprint)
 	page := int64(1)
 	for {
 		request := &casopenapi.ListUserCertificateOrderRequest{}
@@ -116,7 +114,6 @@ func (c *APIClient) FindCertificateByFingerprint(ctx context.Context, fingerprin
 			if item == nil {
 				continue
 			}
-			log.Printf("fingerprint %v found", tea.StringValue(item.Fingerprint))
 			if normalizeFingerprint(tea.StringValue(item.Fingerprint)) == normalizedFingerprint && item.CertificateId != nil {
 				return Certificate{
 					ID:          strconv.FormatInt(tea.Int64Value(item.CertificateId), 10),
@@ -151,6 +148,7 @@ func (c *APIClient) UploadCertificate(ctx context.Context, certPEM, keyPEM, fing
 	request.SetName(certificateName(fingerprint))
 	request.SetCert(certPEM)
 	request.SetKey(keyPEM)
+	request.SetResourceGroupId(c.cfg.ResourceGroupID)
 
 	response, err := c.cas.UploadUserCertificate(request)
 	if err != nil {

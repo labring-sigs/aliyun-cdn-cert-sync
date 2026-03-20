@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -11,7 +12,33 @@ import (
 	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/k8s"
 )
 
+func mustLoadSampleTLS(t *testing.T) (string, string) {
+	t.Helper()
+
+	certPEM, err := os.ReadFile(filepath.Join("..", "aliyun", "testdata", "cert.pem"))
+	if err != nil {
+		t.Fatalf("read sample cert: %v", err)
+	}
+	keyPEM, err := os.ReadFile(filepath.Join("..", "aliyun", "testdata", "key.pem"))
+	if err != nil {
+		t.Fatalf("read sample key: %v", err)
+	}
+	return string(certPEM), string(keyPEM)
+}
+
+type staticSecretSource struct {
+	secret k8s.TLSSecret
+}
+
+func (s *staticSecretSource) GetTLSSecret(_ context.Context, namespace, name string) (k8s.TLSSecret, error) {
+	if namespace != s.secret.Namespace || name != s.secret.Name {
+		return k8s.TLSSecret{}, fmt.Errorf("secret not found: %s/%s", namespace, name)
+	}
+	return s.secret, nil
+}
+
 func TestReconcilerUploadsAndBinds(t *testing.T) {
+	certPEM, keyPEM := mustLoadSampleTLS(t)
 	cfg := config.Config{
 		Kubernetes: config.KubernetesConfig{
 			SecretNamespace: "default",
@@ -36,7 +63,14 @@ func TestReconcilerUploadsAndBinds(t *testing.T) {
 
 	reconciler := NewReconciler(
 		cfg,
-		k8s.NewMemorySecretSource("default", "site-cert"),
+		&staticSecretSource{
+			secret: k8s.TLSSecret{
+				Namespace: "default",
+				Name:      "site-cert",
+				CertPEM:   certPEM,
+				KeyPEM:    keyPEM,
+			},
+		},
 		aliyun.NewMemoryCertificateStore(),
 		aliyun.NewMemoryCDNBinder(),
 		stateStore,
@@ -62,6 +96,7 @@ func TestReconcilerUploadsAndBinds(t *testing.T) {
 
 type retryableFlakySecretSource struct {
 	failuresLeft int
+	t            *testing.T
 }
 
 func (f *retryableFlakySecretSource) GetTLSSecret(_ context.Context, namespace, name string) (k8s.TLSSecret, error) {
@@ -69,11 +104,12 @@ func (f *retryableFlakySecretSource) GetTLSSecret(_ context.Context, namespace, 
 		f.failuresLeft--
 		return k8s.TLSSecret{}, fmt.Errorf("temporary api issue: %w", k8s.ErrRetryable)
 	}
+	certPEM, keyPEM := mustLoadSampleTLS(f.t)
 	return k8s.TLSSecret{
 		Namespace: namespace,
 		Name:      name,
-		CertPEM:   "-----BEGIN CERTIFICATE-----\nEXAMPLE\n-----END CERTIFICATE-----",
-		KeyPEM:    "-----BEGIN PRIVATE KEY-----\nEXAMPLE\n-----END PRIVATE KEY-----",
+		CertPEM:   certPEM,
+		KeyPEM:    keyPEM,
 	}, nil
 }
 
@@ -102,7 +138,7 @@ func TestReconcilerRetriesOnRetryableSecretRead(t *testing.T) {
 
 	reconciler := NewReconciler(
 		cfg,
-		&retryableFlakySecretSource{failuresLeft: 1},
+		&retryableFlakySecretSource{failuresLeft: 1, t: t},
 		aliyun.NewMemoryCertificateStore(),
 		aliyun.NewMemoryCDNBinder(),
 		stateStore,
@@ -118,6 +154,7 @@ func TestReconcilerRetriesOnRetryableSecretRead(t *testing.T) {
 }
 
 func TestReconcilerSecondRunIsIdempotent(t *testing.T) {
+	certPEM, keyPEM := mustLoadSampleTLS(t)
 	cfg := config.Config{
 		Kubernetes: config.KubernetesConfig{
 			SecretNamespace: "default",
@@ -143,7 +180,14 @@ func TestReconcilerSecondRunIsIdempotent(t *testing.T) {
 	store := aliyun.NewMemoryCertificateStore()
 	reconciler := NewReconciler(
 		cfg,
-		k8s.NewMemorySecretSource("default", "site-cert"),
+		&staticSecretSource{
+			secret: k8s.TLSSecret{
+				Namespace: "default",
+				Name:      "site-cert",
+				CertPEM:   certPEM,
+				KeyPEM:    keyPEM,
+			},
+		},
 		store,
 		aliyun.NewMemoryCDNBinder(),
 		stateStore,

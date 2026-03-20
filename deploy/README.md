@@ -12,7 +12,7 @@ Files:
 
 Usage:
 
-1. Update `deploy/configmap.yaml` with the cert-manager Secret name/namespace, CDN domains, and state path.
+1. Update `deploy/configmap.yaml` with the cert-manager Secret name/namespace, CDN domains, state path, and Aliyun resource group if you use one.
 2. Copy `deploy/secret.example.yaml` to a real Secret manifest and fill in Aliyun credentials.
 3. Replace the image in `deploy/cronjob.yaml` with your published image reference.
 4. Apply the manifests:

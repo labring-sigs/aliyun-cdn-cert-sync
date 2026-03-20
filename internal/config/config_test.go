@@ -22,6 +22,7 @@ aliyun:
   accessKeySecret: test-sk
   casEndpoint: https://cas.aliyuncs.com
   cdnEndpoint: https://cdn.aliyuncs.com
+  resourceGroupId: rg-from-config
   cdnDomains:
     - a.example.com
 sync:
@@ -39,6 +40,7 @@ sync:
 	t.Setenv("CDN_CERT_SYNC_ALIYUN_ACCESS_KEY_SECRET", "env-sk")
 	t.Setenv("CDN_CERT_SYNC_ALIYUN_CAS_ENDPOINT", "https://cas.aliyuncs.com")
 	t.Setenv("CDN_CERT_SYNC_ALIYUN_CDN_ENDPOINT", "https://cdn.aliyuncs.com")
+	t.Setenv("CDN_CERT_SYNC_ALIYUN_RESOURCE_GROUP_ID", "rg-from-env")
 	t.Setenv("CDN_CERT_SYNC_STATE_FILE", "/tmp/state-from-env.json")
 
 	cfg, err := Load(configPath)
@@ -60,5 +62,8 @@ sync:
 	}
 	if cfg.Runtime.AdapterMode != "api" {
 		t.Fatalf("expected adapter mode api, got %s", cfg.Runtime.AdapterMode)
+	}
+	if cfg.Aliyun.ResourceGroupID != "rg-from-env" {
+		t.Fatalf("expected resource group override from env, got %q", cfg.Aliyun.ResourceGroupID)
 	}
 }

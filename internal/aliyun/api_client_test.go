@@ -39,8 +39,14 @@ func TestAPIClientFindCertificateByFingerprint(t *testing.T) {
 	client := &APIClient{
 		cas: &stubCASClient{
 			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
-				if request == nil || request.Keyword == nil || *request.Keyword != "FP-1" {
-					t.Fatalf("unexpected request keyword: %#v", request)
+				if request == nil {
+					t.Fatalf("unexpected nil request")
+				}
+				if request.Keyword != nil {
+					t.Fatalf("expected keyword to be unset, got %#v", request.Keyword)
+				}
+				if request.ResourceGroupId == nil || *request.ResourceGroupId != "rg-1" {
+					t.Fatalf("unexpected resource group: %#v", request.ResourceGroupId)
 				}
 				return &casopenapi.ListUserCertificateOrderResponse{
 					Body: &casopenapi.ListUserCertificateOrderResponseBody{
@@ -70,8 +76,14 @@ func TestAPIClientFindCertificateByFingerprintNormalizesDelimiters(t *testing.T)
 	client := &APIClient{
 		cas: &stubCASClient{
 			listFn: func(request *casopenapi.ListUserCertificateOrderRequest) (*casopenapi.ListUserCertificateOrderResponse, error) {
-				if request == nil || request.Keyword == nil || *request.Keyword != "AABBCC" {
-					t.Fatalf("unexpected request keyword: %#v", request)
+				if request == nil {
+					t.Fatalf("unexpected nil request")
+				}
+				if request.Keyword != nil {
+					t.Fatalf("expected keyword to be unset, got %#v", request.Keyword)
+				}
+				if request.ResourceGroupId == nil || *request.ResourceGroupId != "rg-1" {
+					t.Fatalf("unexpected resource group: %#v", request.ResourceGroupId)
 				}
 				return &casopenapi.ListUserCertificateOrderResponse{
 					Body: &casopenapi.ListUserCertificateOrderResponseBody{
@@ -119,10 +131,14 @@ func TestAPIClientFindCertificateByFingerprintNotFound(t *testing.T) {
 
 func TestAPIClientUploadCertificate(t *testing.T) {
 	client := &APIClient{
+		cfg: APIClientConfig{ResourceGroupID: "rg-1"},
 		cas: &stubCASClient{
 			uploadFn: func(request *casopenapi.UploadUserCertificateRequest) (*casopenapi.UploadUserCertificateResponse, error) {
 				if request == nil || request.Cert == nil || request.Key == nil || request.Name == nil {
 					t.Fatalf("unexpected upload request: %#v", request)
+				}
+				if request.ResourceGroupId == nil || *request.ResourceGroupId != "rg-1" {
+					t.Fatalf("unexpected resource group: %#v", request.ResourceGroupId)
 				}
 				return &casopenapi.UploadUserCertificateResponse{
 					Body: &casopenapi.UploadUserCertificateResponseBody{CertId: teaInt64(99)},

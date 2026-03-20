@@ -125,6 +125,7 @@ func applyEnvOverrides(cfg *Config) {
 	setString("CDN_CERT_SYNC_ALIYUN_ACCESS_KEY_SECRET", &cfg.Aliyun.AccessKeySecret)
 	setString("CDN_CERT_SYNC_ALIYUN_CAS_ENDPOINT", &cfg.Aliyun.CASEndpoint)
 	setString("CDN_CERT_SYNC_ALIYUN_CDN_ENDPOINT", &cfg.Aliyun.CDNEndpoint)
+	setString("CDN_CERT_SYNC_ALIYUN_RESOURCE_GROUP_ID", &cfg.Aliyun.ResourceGroupID)
 
 	if rawDomains := strings.TrimSpace(os.Getenv("CDN_CERT_SYNC_CDN_DOMAINS")); rawDomains != "" {
 		parts := strings.Split(rawDomains, ",")

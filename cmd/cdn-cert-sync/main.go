@@ -61,6 +61,7 @@ func main() {
 			AccessKeySecret:  cfg.Aliyun.AccessKeySecret,
 			CASEndpoint:      cfg.Aliyun.CASEndpoint,
 			CDNEndpoint:      cfg.Aliyun.CDNEndpoint,
+			ResourceGroupID:  cfg.Aliyun.ResourceGroupID,
 		})
 		if err != nil {
 			log.Fatalf("init aliyun client: %v", err)
