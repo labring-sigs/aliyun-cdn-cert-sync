@@ -33,6 +33,7 @@ internal/aliyun/testdata/aliyun-live.env
 # Editor and OS noise
 .DS_Store
 Thumbs.db
+.zed
 
 # AI configuration files
 .codex/
