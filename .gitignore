@@ -14,7 +14,8 @@
 coverage.out
 cover.out
 coverage.html
-testdata/
+*.pem
+*.crt
 
 # Build output directories
 bin/
