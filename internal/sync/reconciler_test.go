@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/aliyun"
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/config"
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/k8s"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/aliyun"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/config"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/k8s"
 )
 
 func mustLoadSampleTLS(t *testing.T) (string, string) {

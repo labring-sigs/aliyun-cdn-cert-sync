@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/k8s"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/k8s"
 )
 
 func TestAPIClientLiveCASOperations(t *testing.T) {

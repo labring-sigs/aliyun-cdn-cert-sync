@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/aliyun"
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/config"
-	"github.com/allosaurus/aliyun-cdn-cert-sync/internal/k8s"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/aliyun"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/config"
+	"github.com/labring-sigs/aliyun-cdn-cert-sync/internal/k8s"
 )
 
 type Report struct {
