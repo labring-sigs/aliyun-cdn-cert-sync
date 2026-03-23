@@ -8,7 +8,7 @@ COPY configs ./configs
 COPY internal ./internal
 
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/cdn-cert-sync ./cmd/cdn-cert-sync
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -tags=clientgo -o /out/cdn-cert-sync ./cmd/cdn-cert-sync
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
